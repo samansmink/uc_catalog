@@ -66,7 +66,7 @@ jobs:
 
       - name: Create Databricks config
         run: |
-          echo "[ DEFAULT ]" > ~/.databrickscfg
+          echo "[DEFAULT]" > ~/.databrickscfg
           echo "host = $DATABRICKS_ENDPOINT" >> ~/.databrickscfg
           echo "token = $DATABRICKS_TOKEN" >> ~/.databrickscfg
           cat ~/.databrickscfg
