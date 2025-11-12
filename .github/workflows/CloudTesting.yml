@@ -69,6 +69,7 @@ jobs:
           echo "[ DEFAULT ]" > ~/.databrickscfg
           echo "host = $DATABRICKS_ENDPOINT" >> ~/.databrickscfg
           echo "token = $DATABRICKS_TOKEN" >> ~/.databrickscfg
+          cat ~/.databrickscfg
 
       - name: Generate random schema name
         run: |
