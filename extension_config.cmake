@@ -8,6 +8,6 @@ duckdb_extension_load(uc_catalog
 
 duckdb_extension_load(delta
         GIT_URL https://github.com/samansmink/duckdb_delta
-        GIT_TAG cdb19d3be1ba024ab2285fd14f1c6c4d5d04d023
+        GIT_TAG a5d61103d047ca4d8f8d862abf24d670dbde5060 # branch: ccv2
         SUBMODULES extension-ci-tools
 )

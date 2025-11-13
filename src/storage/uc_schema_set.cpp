@@ -20,9 +20,9 @@ void UCSchemaSet::LoadEntries(ClientContext &context) {
 
 	auto &uc_catalog = catalog.Cast<UCCatalog>();
 
-	auto tables = UCAPI::GetSchemas(uc_catalog.internal_name, uc_catalog.credentials);
+	auto schemas = UCAPI::GetSchemas(uc_catalog.internal_name, uc_catalog.credentials);
 
-	for (const auto &schema : tables) {
+	for (const auto &schema : schemas) {
 		CreateSchemaInfo info;
 		info.schema = schema.schema_name;
 		info.internal = IsInternalTable(schema.catalog_name, schema.schema_name);

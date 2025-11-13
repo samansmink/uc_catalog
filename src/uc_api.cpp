@@ -61,7 +61,7 @@ static void InitializeCurlObject(CURL *curl, const string &token) {
 	SetCurlCAFileInfo(curl);
 }
 
-static string GetRequest(const string &url, const string &token = "") {
+static string GetRequest(const string &url, const string &token = "", const string& body = "") {
 	CURL *curl;
 	CURLcode res;
 	string readBuffer;
@@ -71,6 +71,14 @@ static string GetRequest(const string &url, const string &token = "") {
 		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, GetRequestWriteCallback);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+
+		if (!body.empty()) {
+			// API wants a body with a GET request which is non-standard, but works TODO: will cause problems when switching to HTTPUtil?
+			curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.length());
+		}
+
 		InitializeCurlObject(curl, token);
 		res = curl_easy_perform(curl);
 		curl_easy_cleanup(curl);
@@ -261,6 +269,40 @@ string UCAPI::GetDefaultSchema(const UCCredentials &credentials) {
 	return setting_name;
 }
 
+UCAPICommitsResult UCAPI::GetCommits(const string &table_id, const string &table_uri, const UCCredentials &credentials) {
+	UCAPICommitsResult result;
+	string body =
+	    StringUtil::Format("{\"start_version\": 0, \"table_id\": \"%s\", \"table_uri\": \"%s\"}", table_id.c_str(), table_uri.c_str());
+	string url = credentials.endpoint + "/api/2.1/unity-catalog/delta/preview/commits";
+	auto api_result = GetRequest(url, credentials.token, body);
+
+	// Read JSON and get root
+	duckdb_yyjson::yyjson_doc *doc = duckdb_yyjson::yyjson_read(api_result.c_str(), api_result.size(), 0);
+	duckdb_yyjson::yyjson_val *root = yyjson_doc_get_root(doc);
+
+	auto error = CheckError(root);
+	if (error.HasError()) {
+		error.ThrowError(StringUtil::Format("Failed to get commits for %s", table_id));
+	}
+
+	result.latest_table_version = TryGetNumFromObject(root, "latest_table_version", true);
+
+	auto *commits = yyjson_obj_get(root, "commits");
+	size_t idx, max;
+	duckdb_yyjson::yyjson_val *commit;
+	yyjson_arr_foreach(commits, idx, max, commit) {
+		UCAPICommit commit_result;
+		commit_result.version = TryGetNumFromObject(commit, "version", true);
+		commit_result.timestamp = TryGetNumFromObject(commit, "timestamp", true);
+		commit_result.file_name = TryGetStrFromObject(commit, "file_name", true);
+		commit_result.file_size = TryGetNumFromObject(commit, "file_size", true);
+		commit_result.file_modification_timestamp = TryGetNumFromObject(commit, "file_modification_timestamp", true);
+		result.commits.push_back(commit_result);
+	}
+
+	return result;
+}
+
 UCAPITableCredentials UCAPI::GetTableCredentials(const string &table_id, const UCCredentials &credentials) {
 	UCAPITableCredentials result;
 
@@ -333,6 +375,13 @@ vector<UCAPITable> UCAPI::GetTables(const string &catalog, const string &schema,
 		yyjson_arr_foreach(columns, col_idx, col_max, col) {
 			auto column_definition = ParseColumnDefinition(col);
 			table_result.columns.push_back(column_definition);
+		}
+
+		auto *properties = yyjson_obj_get(table, "properties");
+		duckdb_yyjson::yyjson_val *key, *val;
+		size_t prop_idx, prop_max;
+		yyjson_obj_foreach(properties, idx, max, key, val) {
+			table_result.properties[duckdb_yyjson::yyjson_get_str(key)] = duckdb_yyjson::yyjson_get_str(val);
 		}
 
 		result.push_back(table_result);

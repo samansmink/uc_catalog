@@ -60,6 +60,34 @@ TableFunction UCTableEntry::GetScanFunction(ClientContext &context, unique_ptr<F
 		                              table_data->data_source_format);
 	}
 
+	// CCV2
+	Value ccv2_value;
+	auto ccv2_lookup = table_data->properties.find("delta.feature.catalogOwned-preview");
+	if (ccv2_lookup != table_data->properties.end() && ccv2_lookup->second == "supported") {
+		auto commits = UCAPI::GetCommits(table_data->table_id, table_data->storage_location, uc_catalog.credentials);
+
+		vector<Value> commit_values;
+		for (const auto &commit : commits.commits) {
+			child_list_t<Value> commit_struct;
+
+			commit_struct.push_back(make_pair("version", Value::BIGINT(commit.version)));
+			commit_struct.push_back(make_pair("timestamp", Value::BIGINT(commit.timestamp)));
+			commit_struct.push_back(make_pair("file_name", Value(table_data->storage_location + "/_delta_log/_staged_commits/" + commit.file_name)));
+			commit_struct.push_back(make_pair("file_size", Value::BIGINT(commit.file_size)));
+			commit_struct.push_back(make_pair("file_modification_timestamp", Value::BIGINT(commit.file_modification_timestamp)));
+			commit_values.push_back(Value::STRUCT(std::move(commit_struct)));
+		}
+		ccv2_value =
+		    Value::LIST(LogicalType::STRUCT(
+		                    {
+		                    	make_pair("version", LogicalType::BIGINT),
+		                    	make_pair("timestamp", LogicalType::BIGINT),
+								make_pair("file_name", LogicalType::VARCHAR), make_pair("file_size", LogicalType::BIGINT),
+								make_pair("file_modification_timestamp", LogicalType::BIGINT)
+		                    }),commit_values);
+	}
+
+
 	// Set the S3 path as input to table function
 	vector<Value> inputs = {table_data->storage_location};
 
@@ -89,6 +117,10 @@ TableFunction UCTableEntry::GetScanFunction(ClientContext &context, unique_ptr<F
 	vector<LogicalType> return_types;
 	vector<string> names;
 	TableFunctionRef empty_ref;
+
+	if (!ccv2_value.IsNull()) {
+		param_map["log_tail"] = ccv2_value;
+	}
 
 	TableFunctionBindInput bind_input(inputs, param_map, return_types, names, nullptr, nullptr, delta_scan_function,
 	                                  empty_ref);
