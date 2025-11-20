@@ -95,6 +95,14 @@ PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGene
                                         optional_ptr<PhysicalOperator> plan) {
 	auto &table = op.table.Cast<UCTableEntry>();
 
+	// Detect CCV2
+	bool ccv2_enabled = false;
+	Value ccv2_value;
+	auto ccv2_lookup = table.table_data->properties.find("delta.feature.catalogOwned-preview");
+	if (ccv2_lookup != table.table_data->properties.end() && ccv2_lookup->second == "supported") {
+		ccv2_enabled = true;
+	}
+
 	// LAZY CREATE ATTACHED DB
 	// TODO: move to transaction?
 	if (!table.internal_attached_database) {
@@ -103,14 +111,18 @@ PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGene
 		// Create the attach info for the table
 		AttachInfo info;
 		info.name = "__uc_catalog_internal_" + internal_name + "_" + table.schema.name + "_" + table.name; // TODO:
-		info.options = {
-		    {"type", Value("Delta")}, {"child_catalog_mode", Value(true)}, {"internal_table_name", Value(table.name)}};
+		info.options = {{"type", Value("Delta")},
+		                {"child_catalog_mode", Value(true)},
+		                {"internal_table_name", Value(table.name)},
+		                {"parent_catalog", Value(this->GetName())},
+		                {"parent_commit", Value(ccv2_enabled)}};
 		info.path = table.table_data->storage_location;
 		AttachOptions options(context.db->config.options);
 		options.access_mode = AccessMode::READ_WRITE;
 		options.db_type = "delta";
 		auto &internal_db = table.internal_attached_database;
 
+		// internal_db = make_shared_ptr<AttachedDatabase>(*context.db, *this, info.name, info.path, options);
 		internal_db = db_manager.AttachDatabase(context, info, options);
 
 		//! Initialize the database.

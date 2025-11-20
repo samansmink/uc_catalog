@@ -1,0 +1,6 @@
+add_library(
+  uc_ext_functions OBJECT
+  uc_delta_ccv2_commit.cpp)
+set(ALL_OBJECT_FILES
+    ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:uc_ext_functions>
+    PARENT_SCOPE)
