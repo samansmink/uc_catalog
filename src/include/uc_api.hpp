@@ -75,5 +75,6 @@ public:
 	static vector<UCAPITable> GetTablesInSchema(const string &catalog, const string &schema,
 	                                            const UCCredentials &credentials);
 	static UCAPICommitsResult GetCommits(const string &table_id, const string &table_uri, const UCCredentials &credentials);
+	static bool PostCommit(const string &table_id, const string &table_uri, const UCCredentials &credentials, idx_t version, idx_t timestamp, const string &file_name, idx_t file_size, idx_t file_modification_timestamp);
 };
 } // namespace duckdb

@@ -115,7 +115,9 @@ PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGene
 		                {"child_catalog_mode", Value(true)},
 		                {"internal_table_name", Value(table.name)},
 		                {"parent_catalog", Value(this->GetName())},
+		                {"parent_catalog_schema", Value(table.schema.name)},
 		                {"parent_commit", Value(ccv2_enabled)}};
+
 		info.path = table.table_data->storage_location;
 		AttachOptions options(context.db->config.options);
 		options.access_mode = AccessMode::READ_WRITE;

@@ -61,7 +61,7 @@ static void InitializeCurlObject(CURL *curl, const string &token) {
 	SetCurlCAFileInfo(curl);
 }
 
-static string GetRequest(const string &url, const string &token = "", const string& body = "") {
+static string GetRequest(const string &url, const string &token = "", const string& body = "", const string &method_override = "GET") {
 	CURL *curl;
 	CURLcode res;
 	string readBuffer;
@@ -74,7 +74,7 @@ static string GetRequest(const string &url, const string &token = "", const stri
 
 		if (!body.empty()) {
 			// API wants a body with a GET request which is non-standard, but works TODO: will cause problems when switching to HTTPUtil?
-			curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
+			curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method_override.c_str());
 			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
 			curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.length());
 		}
@@ -303,6 +303,25 @@ UCAPICommitsResult UCAPI::GetCommits(const string &table_id, const string &table
 	return result;
 }
 
+bool UCAPI::PostCommit(const string &table_id, const string &table_uri, const UCCredentials &credentials, idx_t version, idx_t timestamp, const string &file_name, idx_t file_size, idx_t file_modification_timestamp) {
+	UCAPICommitsResult result;
+	string body = StringUtil::Format(R"({"table_id": "%s", "table_uri": "%s/", "commit_info": {"version": %ld, "timestamp": %ld, "file_name": "%s", "file_size": %ld, "file_modification_timestamp": %ld}})", table_id.c_str(), table_uri.c_str(), version, timestamp, file_name.c_str(), file_size, file_modification_timestamp);
+	string url = credentials.endpoint + "/api/2.1/unity-catalog/delta/preview/commits";
+	printf("BODY:\n\n%s\n\n", body.c_str());
+	auto api_result = GetRequest(url, credentials.token, body, "POST");
+
+	// Read JSON and get root
+	duckdb_yyjson::yyjson_doc *doc = duckdb_yyjson::yyjson_read(api_result.c_str(), api_result.size(), 0);
+	duckdb_yyjson::yyjson_val *root = yyjson_doc_get_root(doc);
+
+	auto error = CheckError(root);
+	if (error.HasError()) {
+		error.ThrowError(StringUtil::Format("Failed to commit to %s", table_id));
+	}
+
+	return true;
+}
+
 UCAPITableCredentials UCAPI::GetTableCredentials(const string &table_id, const UCCredentials &credentials) {
 	UCAPITableCredentials result;
 
@@ -380,7 +399,7 @@ vector<UCAPITable> UCAPI::GetTables(const string &catalog, const string &schema,
 		auto *properties = yyjson_obj_get(table, "properties");
 		duckdb_yyjson::yyjson_val *key, *val;
 		size_t prop_idx, prop_max;
-		yyjson_obj_foreach(properties, idx, max, key, val) {
+		yyjson_obj_foreach(properties, prop_idx, prop_max, key, val) {
 			table_result.properties[duckdb_yyjson::yyjson_get_str(key)] = duckdb_yyjson::yyjson_get_str(val);
 		}
 
