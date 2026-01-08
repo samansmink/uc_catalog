@@ -72,11 +72,14 @@ TableFunction UCTableEntry::GetScanFunction(ClientContext &context, unique_ptr<F
 
 			commit_struct.push_back(make_pair("version", Value::BIGINT(commit.version)));
 			commit_struct.push_back(make_pair("timestamp", Value::BIGINT(commit.timestamp)));
-			commit_struct.push_back(make_pair("file_name", Value(table_data->storage_location + "/_delta_log/_staged_commits/" + commit.file_name)));
+			commit_struct.push_back(make_pair(
+			    "file_name", Value(table_data->storage_location + "/_delta_log/_staged_commits/" + commit.file_name)));
 			commit_struct.push_back(make_pair("file_size", Value::BIGINT(commit.file_size)));
-			commit_struct.push_back(make_pair("file_modification_timestamp", Value::BIGINT(commit.file_modification_timestamp)));
+			commit_struct.push_back(
+			    make_pair("file_modification_timestamp", Value::BIGINT(commit.file_modification_timestamp)));
 			commit_values.push_back(Value::STRUCT(std::move(commit_struct)));
 		}
+
 		ccv2_value =
 		    Value::LIST(LogicalType::STRUCT(
 		                    {

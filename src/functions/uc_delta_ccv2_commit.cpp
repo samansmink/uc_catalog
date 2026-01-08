@@ -30,12 +30,13 @@ void UCDeltaCCV2CommitExecute(ClientContext &context, TableFunctionInput &data_p
 	string commit_file_path = res[0].GetValue<string>();
 	idx_t commit_file_size = res[1].GetValue<idx_t>();
 	idx_t commit_timestamp = res[2].GetValue<idx_t>();
-	auto table_entry = reinterpret_cast<UCTableEntry *>(res[3].GetPointer());
-	idx_t file_modification_timestamp = res[4].GetValue<idx_t>();
+	idx_t version = res[3].GetValue<idx_t>();
+	auto table_entry = reinterpret_cast<UCTableEntry *>(res[4].GetPointer());
+	idx_t file_modification_timestamp = res[5].GetValue<idx_t>();
 
 	string table_id = table_entry->table_data->table_id;
 	string table_location = table_entry->table_data->storage_location;
-	idx_t version = res[6].GetValue<idx_t>();
+
 	UCCredentials & credentials = table_entry->catalog.Cast<UCCatalog>().credentials;
 
 	// Get relative path
@@ -43,8 +44,8 @@ void UCDeltaCCV2CommitExecute(ClientContext &context, TableFunctionInput &data_p
 
 	UCAPI::PostCommit(table_id, table_location, credentials, version, commit_timestamp, commit_file_name, commit_file_size, file_modification_timestamp);
 
-	output.SetCardinality(2);
-	output.SetValue(0,1, Value::BOOLEAN(true));
+	output.SetCardinality(1);
+	output.SetValue(1,0, Value::BOOLEAN(true));
 }
 
 UCDeltaCCV2Commit::UCDeltaCCV2Commit()
