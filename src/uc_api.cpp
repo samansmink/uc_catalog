@@ -137,7 +137,7 @@ public:
 public:
 	void ThrowError(const string &prefix) {
 		D_ASSERT(HasError());
-		throw InvalidInputException("%s. error_code: %s, message: %s", prefix, error_code, message);
+		throw IOException("%s. error_code: %s, message: %s", prefix, error_code, message);
 	}
 
 private:
