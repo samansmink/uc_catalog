@@ -25,6 +25,8 @@ public:
 	void RefreshCredentials(ClientContext &context);
 	void InternalAttach(ClientContext &context);
 	void InternalDetach(ClientContext &context);
+	bool IsCCV2() const;
+	Value BuildLogTail(ClientContext &context);
 private:
 	string AttachedCatalogName() const;
 public:

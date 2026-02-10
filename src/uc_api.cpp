@@ -30,7 +30,7 @@ static void EnsureHttpfsExtension(shared_ptr<DatabaseInstance> db) {
 	}
 }
 
-static string GetRequest(ClientContext &ctx, const string &url, const string &token = "", const string &body = "") {
+static string MakeRequest(ClientContext &ctx, const string &url, const string &token = "", const string &body = "", bool send_as_get = false) {
 	auto db = ctx.db;
 	EnsureHttpfsExtension(db);
 	auto &http_util = HTTPUtil::Get(*db);
@@ -46,7 +46,7 @@ static string GetRequest(ClientContext &ctx, const string &url, const string &to
 		resp = http_util.Request(req);
 	} else {
 		PostRequestInfo req(url, hdrs, *params, const_data_ptr_cast(body.data()), body.size());
-		req.send_post_as_get_request = true;
+		req.send_post_as_get_request = send_as_get;
 		resp = http_util.Request(req);
 	}
 
@@ -167,7 +167,7 @@ static string GetCredentialsRequest(ClientContext &ctx, const string &url, const
 
 string UCAPI::GetDefaultSchema(ClientContext &ctx, const UCCredentials &credentials) {
 	auto url = credentials.endpoint + "/api/2.0/settings/types/default_namespace_ws/names/default";
-	auto resp = GetRequest(ctx, url, credentials.token);
+	auto resp = MakeRequest(ctx, url, credentials.token);
 
 	// Read JSON and get root
 	duckdb_yyjson::yyjson_doc *doc = duckdb_yyjson::yyjson_read(resp.c_str(), resp.size(), 0);
@@ -192,7 +192,7 @@ UCAPICommitsResult UCAPI::GetCommits(ClientContext &ctx, const string &table_id,
 	string body =
 	    StringUtil::Format("{\"start_version\": 0, \"table_id\": \"%s\", \"table_uri\": \"%s\"}", table_id.c_str(), table_uri.c_str());
 	string url = credentials.endpoint + "/api/2.1/unity-catalog/delta/preview/commits";
-	auto api_result = GetRequest(ctx, url, credentials.token, body);
+	auto api_result = MakeRequest(ctx, url, credentials.token, body, true);
 
 	// Read JSON and get root
 	duckdb_yyjson::yyjson_doc *doc = duckdb_yyjson::yyjson_read(api_result.c_str(), api_result.size(), 0);
@@ -226,7 +226,7 @@ bool UCAPI::PostCommit(ClientContext &ctx, const string &table_id, const string 
 	string body = StringUtil::Format(R"({"table_id": "%s", "table_uri": "%s/", "commit_info": {"version": %ld, "timestamp": %ld, "file_name": "%s", "file_size": %ld, "file_modification_timestamp": %ld}})", table_id.c_str(), table_uri.c_str(), version, timestamp, file_name.c_str(), file_size, file_modification_timestamp);
 	string url = credentials.endpoint + "/api/2.1/unity-catalog/delta/preview/commits";
 	printf("BODY:\n\n%s\n\n", body.c_str());
-	auto api_result = GetRequest(ctx, url, credentials.token, body);
+	auto api_result = MakeRequest(ctx, url, credentials.token, body);
 
 	// Read JSON and get root
 	duckdb_yyjson::yyjson_doc *doc = duckdb_yyjson::yyjson_read(api_result.c_str(), api_result.size(), 0);
@@ -287,7 +287,7 @@ vector<UCAPITable> UCAPI::GetTables(ClientContext &ctx, Catalog &catalog, const 
 	vector<UCAPITable> result;
 	auto url = credentials.endpoint + "/api/2.1/unity-catalog/tables?catalog_name=" + catalog.GetDBPath() +
 	           "&schema_name=" + schema;
-	auto api_result = GetRequest(ctx, url, credentials.token);
+	auto api_result = MakeRequest(ctx, url, credentials.token);
 
 	// Read JSON and get root
 	duckdb_yyjson::yyjson_doc *doc = duckdb_yyjson::yyjson_read(api_result.c_str(), api_result.size(), 0);
@@ -332,7 +332,7 @@ vector<UCAPITable> UCAPI::GetTables(ClientContext &ctx, Catalog &catalog, const 
 vector<UCAPISchema> UCAPI::GetSchemas(ClientContext &ctx, Catalog &catalog, const UCCredentials &credentials) {
 	vector<UCAPISchema> result;
 	auto url = credentials.endpoint + "/api/2.1/unity-catalog/schemas?catalog_name=" + catalog.GetDBPath();
-	auto api_result = GetRequest(ctx, url, credentials.token);
+	auto api_result = MakeRequest(ctx, url, credentials.token);
 
 	// Read JSON and get root
 	duckdb_yyjson::yyjson_doc *doc = duckdb_yyjson::yyjson_read(api_result.c_str(), api_result.size(), 0);

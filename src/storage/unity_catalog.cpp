@@ -106,71 +106,15 @@ PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGene
 	auto &table_entry = op.table.Cast<UCTableEntry>();
 	auto &table = table_entry.table;
 
-	// Detect CCV2
-	bool ccv2_enabled = false;
-	Value ccv2_value;
-	auto ccv2_lookup = table.table_data->properties.find("delta.feature.catalogOwned-preview");
-	if (ccv2_lookup != table.table_data->properties.end() && ccv2_lookup->second == "supported") {
-		ccv2_enabled = true;
-
-		// Fetch the catalog-managed commits for CCV2 tables
-		auto commits = UCAPI::GetCommits(context, table.table_data->table_id, table.table_data->storage_location, credentials);
-
-		vector<Value> commit_values;
-		for (const auto &commit : commits.commits) {
-			child_list_t<Value> commit_struct;
-
-			commit_struct.push_back(make_pair("version", Value::BIGINT(commit.version)));
-			commit_struct.push_back(make_pair("timestamp", Value::BIGINT(commit.timestamp)));
-			commit_struct.push_back(make_pair("file_name", Value(table.table_data->storage_location + "/_delta_log/_staged_commits/" + commit.file_name)));
-			commit_struct.push_back(make_pair("file_size", Value::BIGINT(commit.file_size)));
-			commit_struct.push_back(make_pair("file_modification_timestamp", Value::BIGINT(commit.file_modification_timestamp)));
-			commit_values.push_back(Value::STRUCT(std::move(commit_struct)));
-		}
-		ccv2_value =
-			Value::LIST(LogicalType::STRUCT(
-							{
-								make_pair("version", LogicalType::BIGINT),
-								make_pair("timestamp", LogicalType::BIGINT),
-								make_pair("file_name", LogicalType::VARCHAR), make_pair("file_size", LogicalType::BIGINT),
-								make_pair("file_modification_timestamp", LogicalType::BIGINT)
-							}),commit_values);
+	// CCV2 tables need a fresh attach each write to get an up-to-date log_tail
+	if (table.IsCCV2()) {
+		table.InternalDetach(context);
 	}
 
-	// LAZY CREATE ATTACHED DB
-	// TODO: move to transaction?
-	if (!table.internal_attached_database) {
-		auto &db_manager = DatabaseManager::Get(context);
-
-		// Create the attach info for the table
-		AttachInfo info;
-		info.name =
-		    "__unity_catalog_internal_" + internal_name + "_" + table.schema.name + "_" + table_entry.name; // TODO:
-		info.options = {{"type", Value("Delta")},
-		                {"child_catalog_mode", Value(true)},
-		                {"internal_table_name", Value(table_entry.name)},
-						{"parent_catalog", Value(this->GetName())},
-						{"parent_catalog_schema", Value(table.schema.name)},
-						{"parent_commit", Value(ccv2_enabled)}};
-		info.path = table.table_data->storage_location;
-
-		// Pass the log_tail for CCV2 tables
-		if (!ccv2_value.IsNull()) {
-			info.options["log_tail"] = ccv2_value;
-		}
-
-		AttachOptions options(context.db->config.options);
-		options.access_mode = AccessMode::READ_WRITE;
-		options.db_type = "delta";
-		auto &internal_db = table.internal_attached_database;
-
-		// internal_db = make_shared_ptr<AttachedDatabase>(*context.db, *this, info.name, info.path, options);
-		internal_db = db_manager.AttachDatabase(context, info, options);
-	}
-
-	// LOAD THE INTERNAL TABLE ENTRY
-	auto internal_catalog = table.GetInternalCatalog();
+	table.InternalAttach(context);
 	table.RefreshCredentials(context);
+
+	auto internal_catalog = table.GetInternalCatalog();
 	return internal_catalog->PlanInsert(context, planner, op, plan);
 }
 
