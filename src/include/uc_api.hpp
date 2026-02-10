@@ -8,7 +8,8 @@
 
 #pragma once
 
-#include "duckdb/common/types.hpp"
+#include "duckdb/catalog/catalog.hpp"
+#include "duckdb/main/client_context.hpp"
 
 namespace duckdb {
 struct UCCredentials;
@@ -64,17 +65,18 @@ struct UCAPICommitsResult {
 
 class UCAPI {
 public:
-	//! WARNING: not thread-safe. To be called once on extension initialization
-	static void InitializeCurl();
+	static UCAPITableCredentials GetTableCredentials(ClientContext &ctx, const string &table_id,
+	                                                 const UCCredentials &credentials);
+	static string GetDefaultSchema(ClientContext &ctx, const UCCredentials &credentials);
+	static vector<string> GetCatalogs(ClientContext &ctx, Catalog &catalog, const UCCredentials &credentials);
+	static vector<UCAPITable> GetTables(ClientContext &ctx, Catalog &catalog, const string &schema,
+	                                    const UCCredentials &credentials);
+	static vector<UCAPISchema> GetSchemas(ClientContext &ctx, Catalog &catalog, const UCCredentials &credentials);
 
-	static UCAPITableCredentials GetTableCredentials(const string &table_id, const UCCredentials &credentials);
-	static string GetDefaultSchema(const UCCredentials &credentials);
-	static vector<string> GetCatalogs(const string &catalog, const UCCredentials &credentials);
-	static vector<UCAPITable> GetTables(const string &catalog, const string &schema, const UCCredentials &credentials);
-	static vector<UCAPISchema> GetSchemas(const string &catalog, const UCCredentials &credentials);
-	static vector<UCAPITable> GetTablesInSchema(const string &catalog, const string &schema,
-	                                            const UCCredentials &credentials);
-	static UCAPICommitsResult GetCommits(const string &table_id, const string &table_uri, const UCCredentials &credentials);
-	static bool PostCommit(const string &table_id, const string &table_uri, const UCCredentials &credentials, idx_t version, idx_t timestamp, const string &file_name, idx_t file_size, idx_t file_modification_timestamp);
+	static vector<UCAPITable> GetTablesInSchema(ClientContext &ctx, Catalog &catalog, const string &schema,
+												const UCCredentials &credentials);
+	static UCAPICommitsResult GetCommits(ClientContext &ctx, const string &table_id, const string &table_uri, const UCCredentials &credentials);
+	static bool PostCommit(ClientContext &ctx, const string &table_id, const string &table_uri, const UCCredentials &credentials, idx_t version, idx_t timestamp, const string &file_name, idx_t file_size, idx_t file_modification_timestamp);
 };
+
 } // namespace duckdb

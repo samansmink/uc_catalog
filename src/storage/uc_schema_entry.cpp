@@ -1,6 +1,18 @@
+#include "duckdb/common/unordered_set.hpp"
+#include "duckdb/parser/constraints/list.hpp"
+#include "duckdb/parser/expression/columnref_expression.hpp"
+#include "duckdb/parser/parsed_data/alter_info.hpp"
+#include "duckdb/parser/parsed_data/alter_table_info.hpp"
+#include "duckdb/parser/parsed_data/create_index_info.hpp"
+#include "duckdb/parser/parsed_data/create_view_info.hpp"
+#include "duckdb/parser/parsed_data/drop_info.hpp"
+#include "duckdb/parser/parsed_expression_iterator.hpp"
+#include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
+
 #include "storage/uc_schema_entry.hpp"
 #include "storage/uc_table_entry.hpp"
 #include "storage/uc_transaction.hpp"
+#include "storage/unity_catalog.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/parsed_data/create_index_info.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
@@ -60,23 +72,7 @@ string GetUCCreateView(CreateViewInfo &info) {
 }
 
 optional_ptr<CatalogEntry> UCSchemaEntry::CreateView(CatalogTransaction transaction, CreateViewInfo &info) {
-	if (info.sql.empty()) {
-		throw BinderException("Cannot create view in UC that originated from an "
-		                      "empty SQL statement");
-	}
-	if (info.on_conflict == OnCreateConflict::REPLACE_ON_CONFLICT ||
-	    info.on_conflict == OnCreateConflict::IGNORE_ON_CONFLICT) {
-		auto current_entry = GetEntry(transaction, CatalogType::VIEW_ENTRY, info.view_name);
-		if (current_entry) {
-			if (info.on_conflict == OnCreateConflict::IGNORE_ON_CONFLICT) {
-				return current_entry;
-			}
-			throw NotImplementedException("REPLACE ON CONFLICT in CreateView");
-		}
-	}
-	auto &uc_transaction = GetUCTransaction(transaction);
-	//	uc_transaction.Query(GetUCCreateView(info));
-	return tables.RefreshTable(transaction.GetContext(), info.view_name);
+	throw NotImplementedException("UCSchemaEntry::CreateView");
 }
 
 optional_ptr<CatalogEntry> UCSchemaEntry::CreateType(CatalogTransaction transaction, CreateTypeInfo &info) {
@@ -155,10 +151,10 @@ optional_ptr<CatalogEntry> UCSchemaEntry::LookupEntry(CatalogTransaction transac
 	if (!CatalogTypeIsSupported(lookup_info.GetCatalogType())) {
 		return nullptr;
 	}
-	return GetCatalogSet(lookup_info.GetCatalogType()).GetEntry(transaction.GetContext(), lookup_info.GetEntryName());
+	return GetCatalogSet(lookup_info.GetCatalogType()).GetEntry(transaction.GetContext(), lookup_info);
 }
 
-UCCatalogSet &UCSchemaEntry::GetCatalogSet(CatalogType type) {
+UCTableSet &UCSchemaEntry::GetCatalogSet(CatalogType type) {
 	switch (type) {
 	case CatalogType::TABLE_ENTRY:
 	case CatalogType::VIEW_ENTRY:

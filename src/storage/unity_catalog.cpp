@@ -1,6 +1,7 @@
-#include "storage/uc_catalog.hpp"
+#include "storage/unity_catalog.hpp"
 #include "duckdb/main/attached_database.hpp"
 #include "duckdb/main/database.hpp"
+#include "duckdb/parser/parsed_data/attach_info.hpp"
 #include "duckdb/parser/parsed_data/create_schema_info.hpp"
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 #include "duckdb/planner/operator/logical_insert.hpp"
@@ -12,9 +13,10 @@
 namespace duckdb {
 
 UCCatalog::UCCatalog(AttachedDatabase &db_p, const string &internal_name, AttachOptions &attach_options,
-                     UCCredentials credentials, const string &default_schema)
+                     UCCredentials credentials, const string &default_schema, string catalog_name_p)
     : Catalog(db_p), internal_name(internal_name), access_mode(attach_options.access_mode),
-      credentials(std::move(credentials)), schemas(*this), default_schema(default_schema) {
+      credentials(std::move(credentials)), catalog_name(std::move(catalog_name_p)), schemas(*this),
+      default_schema(default_schema) {
 }
 
 UCCatalog::~UCCatalog() = default;
@@ -49,12 +51,12 @@ optional_ptr<SchemaCatalogEntry> UCCatalog::LookupSchema(CatalogTransaction tran
 		if (default_schema.empty()) {
 			throw InvalidInputException(
 			    "Default schema for catalog '%s' not found. This means auto-detection of default schema failed. Please "
-			    "specify a DEFAULT_SCHEMA on ATTACH: `ATTACH '..' (TYPE uc_catalog, DEFAULT_SCHEMA 'my_schema')`",
+			    "specify a DEFAULT_SCHEMA on ATTACH: `ATTACH '..' (TYPE unity_catalog, DEFAULT_SCHEMA 'my_schema')`",
 			    GetName());
 		}
 		return GetSchema(transaction, default_schema, if_not_found);
 	}
-	auto entry = schemas.GetEntry(transaction.GetContext(), schema_lookup.GetEntryName());
+	auto entry = schemas.GetEntry(transaction.GetContext(), schema_lookup);
 	if (!entry && if_not_found != OnEntryNotFound::RETURN_NULL) {
 		throw BinderException("Schema with name \"%s\" not found", schema_lookup.GetEntryName());
 	}
@@ -71,6 +73,14 @@ string UCCatalog::GetDBPath() {
 
 string UCCatalog::GetDefaultSchema() const {
 	return default_schema;
+}
+
+void UCCatalog::OnDetach(ClientContext &context) {
+	schemas.Scan(context, [&](CatalogEntry &entry) {
+		auto &schema = entry.Cast<UCSchemaEntry>();
+		auto &tables = schema.tables;
+		tables.OnDetach(context);
+	});
 }
 
 DatabaseSize UCCatalog::GetDatabaseSize(ClientContext &context) {
@@ -93,7 +103,8 @@ PhysicalOperator &UCCatalog::PlanCreateTableAs(ClientContext &context, PhysicalP
 
 PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGenerator &planner, LogicalInsert &op,
                                         optional_ptr<PhysicalOperator> plan) {
-	auto &table = op.table.Cast<UCTableEntry>();
+	auto &table_entry = op.table.Cast<UCTableEntry>();
+	auto &table = table_entry.table;
 
 	// Detect CCV2
 	bool ccv2_enabled = false;
@@ -103,7 +114,7 @@ PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGene
 		ccv2_enabled = true;
 
 		// Fetch the catalog-managed commits for CCV2 tables
-		auto commits = UCAPI::GetCommits(table.table_data->table_id, table.table_data->storage_location, credentials);
+		auto commits = UCAPI::GetCommits(context, table.table_data->table_id, table.table_data->storage_location, credentials);
 
 		vector<Value> commit_values;
 		for (const auto &commit : commits.commits) {
@@ -117,13 +128,13 @@ PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGene
 			commit_values.push_back(Value::STRUCT(std::move(commit_struct)));
 		}
 		ccv2_value =
-		    Value::LIST(LogicalType::STRUCT(
-		                    {
-		                    	make_pair("version", LogicalType::BIGINT),
-		                    	make_pair("timestamp", LogicalType::BIGINT),
+			Value::LIST(LogicalType::STRUCT(
+							{
+								make_pair("version", LogicalType::BIGINT),
+								make_pair("timestamp", LogicalType::BIGINT),
 								make_pair("file_name", LogicalType::VARCHAR), make_pair("file_size", LogicalType::BIGINT),
 								make_pair("file_modification_timestamp", LogicalType::BIGINT)
-		                    }),commit_values);
+							}),commit_values);
 	}
 
 	// LAZY CREATE ATTACHED DB
@@ -133,20 +144,21 @@ PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGene
 
 		// Create the attach info for the table
 		AttachInfo info;
-		info.name = "__uc_catalog_internal_" + internal_name + "_" + table.schema.name + "_" + table.name; // TODO:
+		info.name =
+		    "__unity_catalog_internal_" + internal_name + "_" + table.schema.name + "_" + table_entry.name; // TODO:
 		info.options = {{"type", Value("Delta")},
 		                {"child_catalog_mode", Value(true)},
-		                {"internal_table_name", Value(table.name)},
-		                {"parent_catalog", Value(this->GetName())},
-		                {"parent_catalog_schema", Value(table.schema.name)},
-		                {"parent_commit", Value(ccv2_enabled)}};
+		                {"internal_table_name", Value(table_entry.name)},
+						{"parent_catalog", Value(this->GetName())},
+						{"parent_catalog_schema", Value(table.schema.name)},
+						{"parent_commit", Value(ccv2_enabled)}};
+		info.path = table.table_data->storage_location;
 
 		// Pass the log_tail for CCV2 tables
 		if (!ccv2_value.IsNull()) {
 			info.options["log_tail"] = ccv2_value;
 		}
 
-		info.path = table.table_data->storage_location;
 		AttachOptions options(context.db->config.options);
 		options.access_mode = AccessMode::READ_WRITE;
 		options.db_type = "delta";
@@ -154,41 +166,11 @@ PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGene
 
 		// internal_db = make_shared_ptr<AttachedDatabase>(*context.db, *this, info.name, info.path, options);
 		internal_db = db_manager.AttachDatabase(context, info, options);
-
-		//! Initialize the database.
-		internal_db->Initialize(context);
-		internal_db->FinalizeLoad(context);
-		db_manager.FinalizeAttach(context, info, internal_db);
 	}
 
 	// LOAD THE INTERNAL TABLE ENTRY
 	auto internal_catalog = table.GetInternalCatalog();
-
-	// CREATE TMP CREDENTIALS TODO: dedup with getScanFunction
-	auto &table_data = table.table_data;
-	if (table_data->storage_location.find("file://") != 0) {
-		auto &secret_manager = SecretManager::Get(context);
-		// Get Credentials from UCAPI
-		auto table_credentials = UCAPI::GetTableCredentials(table_data->table_id, credentials);
-
-		// Inject secret into secret manager sc oped to this path TODO:
-		CreateSecretInput input;
-		input.on_conflict = OnCreateConflict::REPLACE_ON_CONFLICT;
-		input.persist_type = SecretPersistType::TEMPORARY;
-		input.name = "__internal_uc_" + table_data->table_id;
-		input.type = "s3";
-		input.provider = "config";
-		input.options = {
-		    {"key_id", table_credentials.key_id},
-		    {"secret", table_credentials.secret},
-		    {"session_token", table_credentials.session_token},
-		    {"region", credentials.aws_region},
-		};
-		input.scope = {table_data->storage_location};
-
-		secret_manager.CreateSecret(context, input);
-	}
-
+	table.RefreshCredentials(context);
 	return internal_catalog->PlanInsert(context, planner, op, plan);
 }
 

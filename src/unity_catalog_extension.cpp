@@ -1,23 +1,31 @@
-#include "uc_catalog_extension.hpp"
-#include "storage/uc_catalog.hpp"
-#include "storage/uc_transaction_manager.hpp"
-
-#include "duckdb.hpp"
-#include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/string_util.hpp"
-#include "duckdb/function/scalar_function.hpp"
-#include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
+#include "duckdb/main/extension/extension_loader.hpp"
+#include "duckdb/main/extension_helper.hpp"
+#include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/parser/parsed_data/attach_info.hpp"
 #include "duckdb/storage/storage_extension.hpp"
+
+#include "storage/unity_catalog.hpp"
+#include "storage/uc_transaction_manager.hpp"
 #include "uc_api.hpp"
+#include "unity_catalog_extension.hpp"
 
 namespace duckdb {
 
+template <bool SHORT_NAME = false>
 static unique_ptr<BaseSecret> CreateUCSecretFunction(ClientContext &, CreateSecretInput &input) {
 	// apply any overridden settings
 	vector<string> prefix_paths;
-	auto result = make_uniq<KeyValueSecret>(prefix_paths, "uc", "config", input.name);
+
+	string name;
+	if (SHORT_NAME) {
+		name = "uc";
+	} else {
+		name = "unity_catalog";
+	}
+
+	auto result = make_uniq<KeyValueSecret>(prefix_paths, name, "config", input.name);
 	for (const auto &named_param : input.options) {
 		auto lower_name = StringUtil::Lower(named_param.first);
 
@@ -60,6 +68,7 @@ unique_ptr<SecretEntry> GetSecret(ClientContext &context, const string &secret_n
 	return nullptr;
 }
 
+template <bool DEPRECATED_NAME = false>
 static unique_ptr<Catalog> UCCatalogAttach(optional_ptr<StorageExtensionInfo> storage_info, ClientContext &context,
                                            AttachedDatabase &db, const string &name, AttachInfo &info,
                                            AttachOptions &attach_options) {
@@ -84,14 +93,21 @@ static unique_ptr<Catalog> UCCatalogAttach(optional_ptr<StorageExtensionInfo> st
 	// if no secret is specified we default to the unnamed mysql secret, if it
 	// exists
 	bool explicit_secret = !secret_name.empty();
-	if (!explicit_secret) {
-		// look up settings from the default unnamed mysql secret if none is
+
+	unique_ptr<SecretEntry> secret_entry;
+
+	if (!secret_name.empty()) {
+		secret_entry = GetSecret(context, secret_name);
+	} else {
+		// look up settings from the default unnamed secret if none is
 		// provided
-		secret_name = "__default_uc";
+		secret_entry = GetSecret(context, "__default_unity_catalog");
+		if (!secret_entry) {
+			secret_entry = GetSecret(context, "__default_uc");
+		}
 	}
 
 	string connection_string = info.path;
-	auto secret_entry = GetSecret(context, secret_name);
 	if (secret_entry) {
 		// secret found - read data
 		const auto &kv_secret = dynamic_cast<const KeyValueSecret &>(*secret_entry->secret);
@@ -116,59 +132,77 @@ static unique_ptr<Catalog> UCCatalogAttach(optional_ptr<StorageExtensionInfo> st
 		//! No explicit default schema provided, ask the catalog:
 		// Fixme: default namespace endpoint not available in OSS unity catalog, hence we throw
 		try {
-			default_schema = UCAPI::GetDefaultSchema(credentials);
+			default_schema = UCAPI::GetDefaultSchema(context, credentials);
 		} catch (Exception &e) {
 			DUCKDB_LOG_ERROR(context, "Failed to fetch default schema: %s", e.what());
 		}
 	}
 
-	return make_uniq<UCCatalog>(db, info.path, attach_options, credentials, default_schema);
+	string catalog_name;
+	if (DEPRECATED_NAME) {
+		catalog_name = "uc_catalog";
+	} else {
+		catalog_name = "unity_catalog";
+	}
+	return make_uniq<UCCatalog>(db, info.path, attach_options, credentials, default_schema, catalog_name);
 }
 
 static unique_ptr<TransactionManager> CreateTransactionManager(optional_ptr<StorageExtensionInfo> storage_info,
                                                                AttachedDatabase &db, Catalog &catalog) {
-	auto &uc_catalog = catalog.Cast<UCCatalog>();
-	return make_uniq<UCTransactionManager>(db, uc_catalog);
+	auto &unity_catalog = catalog.Cast<UCCatalog>();
+	return make_uniq<UCTransactionManager>(db, unity_catalog);
 }
 
+template <bool DEPRECATED_NAME>
 class UCCatalogStorageExtension : public StorageExtension {
 public:
 	UCCatalogStorageExtension() {
-		attach = UCCatalogAttach;
+		attach = UCCatalogAttach<DEPRECATED_NAME>;
 		create_transaction_manager = CreateTransactionManager;
 	}
 };
 
 static void LoadInternal(ExtensionLoader &loader) {
-	UCAPI::InitializeCurl();
-
+	// Register unity_catalog secret type
 	SecretType secret_type;
-	secret_type.name = "uc";
+	secret_type.name = "unity_catalog";
 	secret_type.deserializer = KeyValueSecret::Deserialize<KeyValueSecret>;
 	secret_type.default_provider = "config";
-
 	loader.RegisterSecretType(secret_type);
 
-	CreateSecretFunction mysql_secret_function = {"uc", "config", CreateUCSecretFunction};
+	// Also register the short alias
+	secret_type.name = "uc";
+	loader.RegisterSecretType(secret_type);
+
+	// Register the create secret function
+	CreateSecretFunction mysql_secret_function = {"unity_catalog", "config", CreateUCSecretFunction};
 	SetUCSecretParameters(mysql_secret_function);
 	loader.RegisterFunction(mysql_secret_function);
 
+	// Register the create secret function for the short alias
+	CreateSecretFunction mysql_secret_function_deprecated = {"uc", "config", CreateUCSecretFunction<true>};
+	SetUCSecretParameters(mysql_secret_function_deprecated);
+	loader.RegisterFunction(mysql_secret_function_deprecated);
+
 	auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
-	config.storage_extensions["uc_catalog"] = make_uniq<UCCatalogStorageExtension>();
+	auto extension = make_shared_ptr<UCCatalogStorageExtension<false>>();
+	StorageExtension::Register(config, "unity_catalog", extension);
+	// Also register the (deprecated) alias
+	StorageExtension::Register(config, "uc_catalog", extension);
 }
 
-void UcCatalogExtension::Load(ExtensionLoader &loader) {
+void UnityCatalogExtension::Load(ExtensionLoader &loader) {
 	LoadInternal(loader);
 }
-std::string UcCatalogExtension::Name() {
-	return "uc_catalog";
+std::string UnityCatalogExtension::Name() {
+	return "unity_catalog";
 }
 
 } // namespace duckdb
 
 extern "C" {
 
-DUCKDB_CPP_EXTENSION_ENTRY(uc_catalog, loader) {
+DUCKDB_CPP_EXTENSION_ENTRY(unity_catalog, loader) {
 	duckdb::LoadInternal(loader);
 }
 }

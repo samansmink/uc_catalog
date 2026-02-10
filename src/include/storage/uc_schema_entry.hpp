@@ -45,12 +45,11 @@ public:
 	optional_ptr<CatalogEntry> LookupEntry(CatalogTransaction transaction, const EntryLookupInfo &lookup_info) override;
 
 private:
-	UCCatalogSet &GetCatalogSet(CatalogType type);
+	UCTableSet &GetCatalogSet(CatalogType type);
 
 	optional_ptr<CatalogEntry> TryLoadBuiltInFunction(const string &entry_name);
 	optional_ptr<CatalogEntry> LoadBuiltInFunction(DefaultTableMacro macro);
-
-private:
+public:
 	UCTableSet tables;
 
 	mutex default_function_lock;

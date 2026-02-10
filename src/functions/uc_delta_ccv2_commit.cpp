@@ -1,7 +1,8 @@
 #include "functions/uc_table_functions.hpp"
 #include "storage/uc_transaction.hpp"
-#include "storage/uc_catalog.hpp"
+#include "storage/unity_catalog.hpp"
 #include "storage/uc_table_entry.hpp"
+#include "storage/uc_table_set.hpp"
 
 namespace duckdb {
 
@@ -34,15 +35,15 @@ void UCDeltaCCV2CommitExecute(ClientContext &context, TableFunctionInput &data_p
 	auto table_entry = reinterpret_cast<UCTableEntry *>(res[4].GetPointer());
 	idx_t file_modification_timestamp = res[5].GetValue<idx_t>();
 
-	string table_id = table_entry->table_data->table_id;
-	string table_location = table_entry->table_data->storage_location;
+	string table_id = table_entry->table.table_data->table_id;
+	string table_location = table_entry->table.table_data->storage_location;
 
-	UCCredentials & credentials = table_entry->catalog.Cast<UCCatalog>().credentials;
+	UCCredentials & credentials = table_entry->table.catalog.Cast<UCCatalog>().credentials;
 
 	// Get relative path
 	string commit_file_name = commit_file_path.substr(commit_file_path.find_last_of("/\\") + 1);
 
-	UCAPI::PostCommit(table_id, table_location, credentials, version, commit_timestamp, commit_file_name, commit_file_size, file_modification_timestamp);
+	UCAPI::PostCommit(context, table_id, table_location, credentials, version, commit_timestamp, commit_file_name, commit_file_size, file_modification_timestamp);
 
 	output.SetCardinality(1);
 	output.SetValue(1,0, Value::BOOLEAN(true));
