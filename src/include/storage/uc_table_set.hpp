@@ -27,8 +27,11 @@ public:
 	void InternalDetach(ClientContext &context);
 	bool IsCCV2() const;
 	Value BuildLogTail(ClientContext &context);
+	void MarkDirty();
 private:
 	string AttachedCatalogName() const;
+	bool is_dirty = false;
+
 public:
 	UCCatalog &catalog;
 	UCSchemaEntry &schema;

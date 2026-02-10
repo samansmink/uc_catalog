@@ -110,6 +110,11 @@ void TableInformation::InternalDetach(ClientContext &context) {
 	internal_attached_database = nullptr;
 }
 
+void TableInformation::MarkDirty() {
+	lock_guard<mutex> l(entry_lock);
+	is_dirty = true;
+}
+
 bool TableInformation::IsCCV2() const {
 	auto it = table_data->properties.find("delta.feature.catalogOwned-preview");
 	return it != table_data->properties.end() && it->second == "supported";
@@ -140,6 +145,13 @@ Value TableInformation::BuildLogTail(ClientContext &context) {
 }
 
 void TableInformation::InternalAttach(ClientContext &context) {
+	{
+		lock_guard<mutex> l(entry_lock);
+		if (is_dirty) {
+			InternalDetach(context);
+			is_dirty = false;
+		}
+	}
 	if (internal_attached_database) {
 		return;
 	}

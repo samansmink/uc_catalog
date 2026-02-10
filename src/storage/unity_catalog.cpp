@@ -106,16 +106,16 @@ PhysicalOperator &UCCatalog::PlanInsert(ClientContext &context, PhysicalPlanGene
 	auto &table_entry = op.table.Cast<UCTableEntry>();
 	auto &table = table_entry.table;
 
-	// CCV2 tables need a fresh attach each write to get an up-to-date log_tail
-	if (table.IsCCV2()) {
-		table.InternalDetach(context);
-	}
-
 	table.InternalAttach(context);
 	table.RefreshCredentials(context);
 
 	auto internal_catalog = table.GetInternalCatalog();
-	return internal_catalog->PlanInsert(context, planner, op, plan);
+	auto &result = internal_catalog->PlanInsert(context, planner, op, plan);
+
+	// Mark dirty so the next operation (read or write) re-attaches with fresh state
+	table.MarkDirty();
+
+	return result;
 }
 
 PhysicalOperator &UCCatalog::PlanDelete(ClientContext &context, PhysicalPlanGenerator &planner, LogicalDelete &op,
