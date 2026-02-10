@@ -225,7 +225,6 @@ bool UCAPI::PostCommit(ClientContext &ctx, const string &table_id, const string 
 	UCAPICommitsResult result;
 	string body = StringUtil::Format(R"({"table_id": "%s", "table_uri": "%s/", "commit_info": {"version": %ld, "timestamp": %ld, "file_name": "%s", "file_size": %ld, "file_modification_timestamp": %ld}})", table_id.c_str(), table_uri.c_str(), version, timestamp, file_name.c_str(), file_size, file_modification_timestamp);
 	string url = credentials.endpoint + "/api/2.1/unity-catalog/delta/preview/commits";
-	printf("BODY:\n\n%s\n\n", body.c_str());
 	auto api_result = MakeRequest(ctx, url, credentials.token, body);
 
 	// Read JSON and get root

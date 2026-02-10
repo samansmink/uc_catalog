@@ -23,7 +23,6 @@ static unique_ptr<FunctionData> UCDeltaCCV2CommitBind(ClientContext &context, Ta
 
 void UCDeltaCCV2CommitExecute(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
 	auto val = output.GetValue(0,0);
-	printf("Committing %s\n", val.ToString().c_str());
 
 	auto res = StructValue::GetChildren(val);
 

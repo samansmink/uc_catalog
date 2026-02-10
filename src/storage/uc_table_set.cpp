@@ -116,7 +116,14 @@ void TableInformation::MarkDirty() {
 }
 
 bool TableInformation::IsCCV2() const {
+	// Check for the preview setting
 	auto it = table_data->properties.find("delta.feature.catalogOwned-preview");
+	if (it != table_data->properties.end() && it->second == "supported") {
+		return true;
+	}
+
+	// Check for the GA setting
+	it = table_data->properties.find("delta.feature.catalogManaged");
 	return it != table_data->properties.end() && it->second == "supported";
 }
 
@@ -156,8 +163,6 @@ void TableInformation::InternalAttach(ClientContext &context) {
 		return;
 	}
 	auto &db_manager = DatabaseManager::Get(context);
-	auto &schema_name = table_data->schema_name; // TODO: check
-	auto &catalog_name = table_data->catalog_name; // TODO: check
 	auto &name = table_data->name;
 
 	// Create the attach info for the table
