@@ -21,6 +21,7 @@ static unique_ptr<FunctionData> UCDeltaCCV2CommitBind(ClientContext &context, Ta
 	throw InternalException("__internal_delta_ccv2_commit_staged is only for internal use and should not be called directly");
 }
 
+// TODO: why use output chunk as input?
 void UCDeltaCCV2CommitExecute(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
 	auto val = output.GetValue(0,0);
 

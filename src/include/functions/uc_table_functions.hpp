@@ -14,10 +14,16 @@
 
 namespace duckdb {
 class UCCatalog;
+class UCSchemaEntry;
 
 class UCDeltaCCV2Commit : public TableFunction {
 public:
 	UCDeltaCCV2Commit();
+};
+
+class UCTableDataPath : public TableFunction {
+public:
+	explicit UCTableDataPath(UCSchemaEntry &schema);
 };
 
 } // namespace duckdb

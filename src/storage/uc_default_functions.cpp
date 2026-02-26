@@ -45,6 +45,12 @@ optional_ptr<CatalogEntry> UCSchemaEntry::TryLoadBuiltInFunction(const string &e
 		return default_function_map[entry_name].get();
 	}
 
+	if (entry_name == "table_data_path") {
+		auto info = CreateTableFunctionInfo(UCTableDataPath(*this));
+		default_function_map[entry_name] = make_uniq_base<CatalogEntry, TableFunctionCatalogEntry>(catalog, *this, info);
+		return default_function_map[entry_name].get();
+	}
+
 	return nullptr;
 }
 
