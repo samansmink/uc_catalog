@@ -73,7 +73,7 @@ void TableInformation::RefreshCredentials(ClientContext &context) {
 	}
 	auto &secret_manager = SecretManager::Get(context);
 	// Get Credentials from UCAPI
-	auto table_credentials = UCAPI::GetTableCredentials(context, table_data->table_id, catalog.credentials);
+	auto table_credentials = UCAPI::GetTableCredentials(context, table_data->table_id, !(catalog.access_mode == AccessMode::READ_ONLY), catalog.credentials);
 
 	// Inject secret into secret manager scoped to this path
 	CreateSecretInput input;
@@ -153,7 +153,7 @@ Value TableInformation::BuildLogTail(ClientContext &context) {
 
 void TableInformation::InternalAttach(ClientContext &context) {
 	{
-		lock_guard<mutex> l(entry_lock);
+		// lock_guard<mutex> l(entry_lock); TODO
 		if (is_dirty) {
 			InternalDetach(context);
 			is_dirty = false;
