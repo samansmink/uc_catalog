@@ -55,13 +55,13 @@ SELECT * FROM simple_table_catalog_managed ORDER BY col1
 4	value-4
 
 statement ok
-INSERT INTO simple_table VALUES (5, 'value-5');
+INSERT INTO simple_table_catalog_managed VALUES (5, 'value-5');
 
 statement ok
-INSERT INTO simple_table VALUES (6, 'value-6');
+INSERT INTO simple_table_catalog_managed VALUES (6, 'value-6');
 
 query II
-SELECT * FROM simple_table ORDER BY col1
+SELECT * FROM simple_table_catalog_managed ORDER BY col1
 ----
 0	value-0
 1	value-1
@@ -73,5 +73,7 @@ SELECT * FROM simple_table ORDER BY col1
 
 # List the staged commits to the table
 query I
-SELECT parse_filename(file) FROM GLOB(getvariable('table_path') || '/_delta_log/_staged_commits/**/*');
+SELECT parse_filename(file)[0:21] as f FROM GLOB(getvariable('table_path') || '/_delta_log/_staged_commits/**/*') order by f;
 ----
+00000000000000000001.
+00000000000000000002.

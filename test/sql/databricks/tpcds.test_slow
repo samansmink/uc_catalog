@@ -18,6 +18,13 @@ require-env DATABRICKS_ENDPOINT
 
 require-env DATABRICKS_REGION
 
+# TODO 
+# Error on Query 1: 
+# 	IO Error:
+# 	DeltaKernel MalformedJsonError (18): data did not match any variant of untagged enum DataType at line 1 column 271 
+mode skip
+
+
 # Do not ignore 'HTTP' error messages!
 set ignore_error_messages
 

@@ -17,7 +17,8 @@ venv:
 	python3.12 -m venv venv
 	./venv/bin/pip3 install -r scripts/databricks_data_gen/requirements.txt
 
-# Note: this is to (re)gen the test data in the remote databricks, this does not need to be rerun for tests.
+# This is to (re)gen the test data in the remote databricks, this does not need to be rerun unless remote data needs refreshing
+# Requires the same env variables from the write tests
 test_data_prepare: venv
 	for f in scripts/databricks_data_gen/custom_data_sources/*.sql; do \
 		./venv/bin/python3 scripts/databricks_data_gen/generate_databricks_test_data.py from-custom-sql $$f duckdb_testing.main; \
@@ -30,21 +31,32 @@ test_data_prepare: venv
 # Write Tests
 ################################################
 
-# These
+# These tests will automatically load some data into a fresh schema in databricks, then allows you to run some tests on it
+# NOTE: Easiest way is to just do make `run_write_tests` which runs all steps
+
+# TODO: test data in `source` schema is currently hand generated, this should be cleaned up
 
 # Before running this, ensure your env is configured:
-#    >   source scripts/databricks_data_gen/run_databricks_env
+#    >   . scripts/databricks_data_gen/run_databricks_env
+
+# Prepare the main write test files by copying the tables from the `source` schema to the `{DATABRICKS_WRITE_TEST_SCHEMA}` schema
 write_tests_prepare: venv
 	./venv/bin/python3 scripts/databricks_data_gen/generate_databricks_test_data.py copy ${DATABRICKS_WRITE_TEST_CATALOG}.source ${DATABRICKS_WRITE_TEST_CATALOG}.${DATABRICKS_WRITE_TEST_SCHEMA}
 	./venv/bin/python3 scripts/databricks_data_gen/generate_databricks_test_data.py copy ${DATABRICKS_WRITE_TEST_CATALOG}.source ${DATABRICKS_WRITE_TEST_CATALOG}.${DATABRICKS_WRITE_TEST_SCHEMA} --catalog-managed
 
 write_tests_run:
-	./build/release/test/unittest "test/sql/databricks/write_tests/*"
+	./build/debug/test/unittest "test/sql/databricks/write_tests/*"
 
 write_tests_cleanup:
 	./venv/bin/python3 scripts/databricks_data_gen/clean_test_data.py ${DATABRICKS_WRITE_TEST_CATALOG}.${DATABRICKS_WRITE_TEST_SCHEMA}
 
-# Automatically run all the write tests
-write_tests: venv
+# - fetches credentials from 1password
+# - generates new schema name
+# - sets all env variables
+# - copies data into fresh table
+# - runs write tests
+# - cleans up data
+# NOTE: may leave some data around on s3, needs investigation!
+run_write_tests: venv
 	. scripts/databricks_data_gen/run_databricks_env && \
 	( $(MAKE) write_tests_prepare && $(MAKE) write_tests_run; EXIT=$$?; $(MAKE) write_tests_cleanup; exit $$EXIT )

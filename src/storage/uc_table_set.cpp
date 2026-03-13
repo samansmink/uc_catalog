@@ -169,7 +169,7 @@ void TableInformation::InternalAttach(ClientContext &context) {
 	AttachInfo info;
 	info.name = AttachedCatalogName();
 	info.options = {
-		{"type", Value("Delta")}, {"child_catalog_mode", Value(true)}, {"internal_table_name", Value(name)}};
+		{"type", Value("Delta")}, {"child_catalog_mode", Value(true)}, {"internal_table_name", Value(name)}, {"unity_table_id", Value(table_data->table_id)}};
 	info.path = table_data->storage_location;
 
 	if (IsCCV2()) {
